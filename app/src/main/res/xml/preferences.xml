@@ -1,0 +1,86 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        app:key="uart"
+        app:title="@string/uart"
+        app:iconSpaceReserved="false">
+
+        <ListPreference
+            app:key="uart_baud_rate"
+            app:title="@string/uart_baud_rate"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true"
+            app:entries="@array/baud_rates"
+            app:entryValues="@array/baud_rates"
+            app:defaultValue="19200" />
+
+        <ListPreference
+            app:key="uart_data_bits"
+            app:title="@string/uart_data_bits"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true"
+            app:entries="@array/data_bits"
+            app:entryValues="@array/data_bits"
+            app:defaultValue="8" />
+
+        <ListPreference
+            app:key="uart_parity"
+            app:title="@string/uart_parity"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true"
+            app:entries="@array/parities"
+            app:entryValues="@array/parity_values"
+            app:defaultValue="0" />
+
+        <ListPreference
+            app:key="uart_stop_bits"
+            app:title="@string/uart_stop_bits"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true"
+            app:entries="@array/stop_bits"
+            app:entryValues="@array/stop_bits"
+            app:defaultValue="1" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:key="tcp"
+        app:title="@string/tcp"
+        app:iconSpaceReserved="false">
+
+        <EditTextPreference
+            app:key="tcp_port"
+            app:title="@string/tcp_port"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true"
+            app:defaultValue="50002" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:title="@string/adapter"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            app:key="adapter_start"
+            app:title="@string/adapter_start"
+            app:summaryOn="@string/adapter_on_summary"
+            app:summaryOff="@string/adapter_off_summary"
+            app:iconSpaceReserved="false"
+            app:persistent="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:title="@string/about"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            app:key="about_version"
+            app:title="@string/about_version"
+            app:iconSpaceReserved="false"
+            app:persistent="false" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

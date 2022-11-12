@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk 30
+
+    defaultConfig {
+        applicationId "azuo.modbusadapter"
+        minSdk 26
+        targetSdk 30
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        config {
+            storeFile file('../modbusadapter.jks')
+            storePassword 'modbusadapter'
+            keyAlias 'modbusadapter'
+            keyPassword 'modbusadapter'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.config
+        }
+        debug {
+            signingConfig signingConfigs.config
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.preference:preference:1.1.1'
+    implementation 'com.google.android.material:material:1.4.0'
+    implementation "com.github.mik3y:usb-serial-for-android:3.4.6"
+}

@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">Modbus Adapter</string>
+    <string name="channel_name">Modbus adpter service</string>
+    <string name="notification_text">Modbus adpter service is running</string>
+
+    <string name="uart">UART</string>
+    <string name="uart_baud_rate">Baud rate</string>
+    <string name="uart_data_bits">Data bits</string>
+    <string name="uart_stop_bits">Stop bits</string>
+    <string name="uart_parity">Parity</string>
+
+    <string name="tcp">TCP</string>
+    <string name="tcp_port">Listen port</string>
+
+    <string name="adapter">Service</string>
+    <string name="adapter_start">Start adapter</string>
+    <string name="adapter_on_summary">Adapter service is started and running</string>
+    <string name="adapter_off_summary">Click to start the adapter service</string>
+
+    <string name="about">About</string>
+    <string name="about_version">Version</string>
+
+    <string name="no_usb">No USB device found.</string>
+    <string name="usb_denied">USB permission denied.</string>
+    <string name="open_usb_failed">Can\'t open USB: %1$s</string>
+    <string name="usb_error">USB error: %1$s</string>
+
+    <string name="tcp_error">TCP error: %1$s</string>
+</resources>

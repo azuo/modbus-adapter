@@ -1,0 +1,31 @@
+<resources>
+    <!-- Reply Preference -->
+    <string-array name="baud_rates">
+        <item>9600</item>
+        <item>19200</item>
+        <item>38400</item>
+        <item>57600</item>
+        <item>115200</item>
+    </string-array>
+
+    <string-array name="data_bits">
+        <item>8</item>
+    </string-array>
+
+    <string-array name="parities">
+        <item>None</item>
+        <item>Odd</item>
+        <item>Event</item>
+    </string-array>
+
+    <string-array name="parity_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+
+    <string-array name="stop_bits">
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+</resources>
