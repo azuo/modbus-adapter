@@ -71,7 +71,7 @@ public class AdapterService extends Service {
                     getApplicationContext(),
                     0,
                     new Intent(ACTION_USB_PERMISSION),
-                    0 // must be mutable, otherwise EXTRA_PERMISSION_GRANTED always false
+                    0 // must be mutable, otherwise EXTRA_PERMISSION_GRANTED never true
                 )
             );
             stopSelf();
@@ -126,14 +126,13 @@ public class AdapterService extends Service {
             return START_NOT_STICKY;
         }
 
-        SERVICE_STARTED = true;
-
         uart = new UART(port);
         uart.start();
 
         gateway = new Gateway(socket);
         gateway.start();
 
+        SERVICE_STARTED = true;
         sendBroadcast(new Intent(ACTION_SERVICE_NOTIFY));
         return START_STICKY;
     }
@@ -292,6 +291,9 @@ public class AdapterService extends Service {
 
         @Override
         public void run() {
+            tcp = new TCP();
+            tcp.start();
+
             while (!stop) {
                 Socket client = null;
                 try {
@@ -304,25 +306,22 @@ public class AdapterService extends Service {
                     }
                 }
                 if (client != null) {
-                    if (tcp != null) {
-                        tcp.close();
-                        tcp = null;
-                    }
+                    //debug("Accepted connection.");
                     try {
-                        tcp = new TCP(client);
-                        tcp.start();
+                        tcp.use(client);
                     }
-                    catch (Exception ignored) {
+                    catch (Exception e) {
                         try {
                             client.close();
                         }
-                        catch (Exception ignored2) {
+                        catch (Exception ignored) {
                         }
                     }
                 }
             }
-            if (tcp != null)
-                tcp.close();
+
+            tcp.close();
+            tcp = null;
         }
 
         public void reply(byte[] data, int offset, int length) {
@@ -350,82 +349,108 @@ public class AdapterService extends Service {
     }
 
     private class TCP extends Thread {
-        private final InputStream input;
-        private final OutputStream output;
-        private byte T1, T2, P1, P2;
+        private InputStream input = null;
+        private OutputStream output = null;
+        private byte T1, T2;
         private boolean stop = false;
 
-        public TCP(Socket socket) throws IOException {
+        public synchronized void use(Socket socket) throws IOException {
+            release();
             input = socket.getInputStream();
             output = socket.getOutputStream();
+            notify();
         }
 
         @Override
         public void run() {
-            byte[] buffer = new byte[260];
+            final byte[] buffer = new byte[260];
             while (!stop) {
-                int n = 0;
-                try {
-                    n = input.read(buffer);
-                    //debug("TCP input", buffer, 0, n);
+                InputStream in;
+                synchronized (this) {
+                    while (!stop && (input == null || output == null)) {
+                        try {
+                            wait();
+                        }
+                        catch (InterruptedException e) {
+                            stop = true;
+                        }
+                    }
+                    in = input;
                 }
-                catch (Exception e) {
-                    if (!stop)
-                        stop = true;
+
+                while (!stop) {
+                    int n;
+                    try {
+                        n = in.read(buffer);
+                        //debug("TCP input", buffer, 0, n);
+                    }
+                    catch (Exception e) {
+                        n = -1;
+                    }
+                    if (n < 0)
+                        break;
+                    else if (
+                        n >= 8 && buffer[2] == 0 && buffer[3] == 0 &&
+                        (((buffer[4] & 0xFF) << 8) | (buffer[5] & 0xFF)) == n - 6
+                    ) {
+                        T1 = buffer[0];
+                        T2 = buffer[1];
+                        uart.transmit(buffer, 6, n - 6);
+                    }
                 }
-                if (n < 0)
-                    stop = true;
-                else if (n >= 8 && (((buffer[4] & 0xFF) << 8) | (buffer[5] & 0xFF)) == n - 6) {
-                    T1 = buffer[0];
-                    T2 = buffer[1];
-                    P1 = buffer[2];
-                    P2 = buffer[3];
-                    uart.transmit(buffer, 6, n - 6);
+
+                synchronized (this) {
+                    release();
+                    input = null;
+                    output = null;
                 }
-            }
-            try {
-                input.close();
-            }
-            catch (Exception ignored) {
-            }
-            try {
-                output.close();
-            }
-            catch (Exception ignored) {
             }
         }
 
         public void send(byte[] data, int offset, int length) {
-            if (!stop && length >= 2 && length <= 254) {
+            final OutputStream out = output;
+            if (out != null && !stop && length >= 2 && length <= 254) {
                 byte[] buffer = new byte[length + 6];
                 buffer[0] = T1;
                 buffer[1] = T2;
-                buffer[2] = P1;
-                buffer[3] = P2;
+                buffer[2] = 0;
+                buffer[3] = 0;
                 buffer[4] = 0; //(byte)((length >> 8) & 0xFF);
                 buffer[5] = (byte)(length & 0xFF);
                 System.arraycopy(data, offset, buffer, 6, length);
                 try {
                     //debug("TCP output", buffer, 0, buffer.length);
-                    output.write(buffer);
+                    out.write(buffer);
                 }
                 catch (Exception ignored) {
-                    close();
+                }
+            }
+        }
+
+        private void release() {
+            if (input != null) {
+                try {
+                    input.close();
+                }
+                catch (Exception ignored) {
+                }
+            }
+            if (output != null) {
+                try {
+                    output.close();
+                }
+                catch (Exception ignored) {
                 }
             }
         }
 
         public void close() {
             stop = true;
-            try {
-                input.close();
-            }
-            catch (Exception ignored) {
-            }
-            try {
-                output.close();
-            }
-            catch (Exception ignored) {
+            synchronized (this) {
+                release();
+                input = null;
+                output = null;
+                notify();
             }
             if (isAlive()) {
                 try {
