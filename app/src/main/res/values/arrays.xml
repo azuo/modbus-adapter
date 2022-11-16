@@ -1,5 +1,4 @@
 <resources>
-    <!-- Reply Preference -->
     <string-array name="baud_rates">
         <item>9600</item>
         <item>19200</item>

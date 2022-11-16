@@ -68,10 +68,10 @@ public class AdapterService extends Service {
             usb.requestPermission(
                 device,
                 PendingIntent.getBroadcast(
-                    getApplicationContext(),
+                    this,
                     0,
                     new Intent(ACTION_USB_PERMISSION),
-                    0 // must be mutable, otherwise EXTRA_PERMISSION_GRANTED never true
+                    0 // must be mutable, otherwise EXTRA_PERMISSION_GRANTED never true?
                 )
             );
             stopSelf();
