@@ -208,6 +208,30 @@ public class AdapterService extends Service {
                 int n = 0;
                 try {
                     n = port.read(buffer, 0);
+                    int expected;
+                    if (n > 1 && (buffer[1] & 0x80) != 0)
+                        expected = 5;
+                    else if (n > 2 && (buffer[1] == 0x01 || buffer[1] == 0x02 ||
+                                       buffer[1] == 0x03 || buffer[1] == 0x04))
+                        expected = 5 + (buffer[2] & 0xFF);
+                    else if (n > 1 && (buffer[1] == 0x05 || buffer[1] == 0x06 ||
+                                       buffer[1] == 0x0F || buffer[1] == 0x10))
+                        expected = 8;
+                    else
+                        expected = n;
+
+                    if (expected <= buffer.length) {
+                        while (n < expected) {
+                            byte[] more = new byte[expected - n];
+                            int read = port.read(more, 500);
+                            if (read <= 0) {    // timed out
+                                n = 0;    // discards this packet
+                                break;
+                            }
+                            System.arraycopy(more, 0, buffer, n, read);
+                            n += read;
+                        }
+                    }
                     //debug("UART receive", buffer, 0, n);
                 }
                 catch (Exception e) {
