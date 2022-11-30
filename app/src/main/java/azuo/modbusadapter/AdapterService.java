@@ -204,45 +204,69 @@ public class AdapterService extends Service {
         @Override
         public void run() {
             byte[] buffer = new byte[256];
-            while (!stop) {
-                int n = 0;
+            nextRead:
+            for (int n = 0, expected = 4; !stop; ) {
                 try {
-                    n = port.read(buffer, 0);
-                    int expected;
-                    if (n > 1 && (buffer[1] & 0x80) != 0)
-                        expected = 5;
-                    else if (n > 2 && (buffer[1] == 0x01 || buffer[1] == 0x02 ||
-                                       buffer[1] == 0x03 || buffer[1] == 0x04))
-                        expected = 5 + (buffer[2] & 0xFF);
-                    else if (n > 1 && (buffer[1] == 0x05 || buffer[1] == 0x06 ||
-                                       buffer[1] == 0x0F || buffer[1] == 0x10))
-                        expected = 8;
-                    else
-                        expected = n;
-
-                    if (expected <= buffer.length) {
-                        while (n < expected) {
-                            byte[] more = new byte[expected - n];
-                            int read = port.read(more, 500);
-                            if (read <= 0) {    // timed out
-                                n = 0;    // discards this packet
-                                break;
-                            }
-                            System.arraycopy(more, 0, buffer, n, read);
-                            n += read;
-                        }
+                    if (n <= 0) {
+                        n = port.read(buffer, 0);
+                        if (stop || n <= 0)
+                            continue;
+                        expected = 4;
                     }
-                    //debug("UART receive", buffer, 0, n);
+
+                    while (n < expected) {
+                        // buggy bulkTransfer (used by port.read if timeout is not 0) fails if more
+                        // than 64 bytes data is read?
+                        byte[] more = new byte[Math.min(64, buffer.length - n)];
+                        int read = port.read(more, 500);
+                        if (stop || read <= 0) {
+                            n = 0;
+                            continue nextRead;
+                        }
+                        System.arraycopy(more, 0, buffer, n, read);
+                        n += read;
+                    }
+                    //debug("RTU read " + n + " of " + expected, buffer, 0, n);
                 }
                 catch (Exception e) {
                     if (!stop) {
                         stop = true;
                         stopSelf(getString(R.string.usb_error, e));
                     }
+                    break;
                 }
-                if (n >= 4 && CRC16(buffer, n - 2) ==
-                              ((buffer[n - 2] & 0xFF) | ((buffer[n - 1] & 0xFF) << 8)))
-                    gateway.reply(buffer, 0, n - 2);
+
+                if (expected == 4) {
+                    if ((buffer[1] & 0x80) != 0)
+                        expected = 5;
+                    else if (buffer[1] == 0x01 || buffer[1] == 0x02 ||
+                             buffer[1] == 0x03 || buffer[1] == 0x04)
+                        expected = 5 + (buffer[2] & 0xFF);
+                    else if (buffer[1] == 0x05 || buffer[1] == 0x06 ||
+                             buffer[1] == 0x0F || buffer[1] == 0x10)
+                        expected = 8;
+                    else
+                        expected = n;
+
+                    if (buffer[1] == 0 || expected > buffer.length) {
+                        //debug("RTU invalid packet", buffer, 0, n);
+                        n = 0;
+                        continue;
+                    }
+                }
+
+                if (n >= expected) {
+                    if (CRC16(buffer, expected - 2) ==
+                        ((buffer[expected - 2] & 0xFF) | ((buffer[expected - 1] & 0xFF) << 8)))
+                        gateway.reply(buffer, 0, expected - 2);
+                    //else
+                    //    debug("RTU bad CRC", buffer, 0, expected);
+
+                    n -= expected;
+                    if (n > 0)
+                        System.arraycopy(buffer, expected, buffer, 0, n);
+                    expected = 4;
+                }
             }
         }
 
@@ -254,7 +278,7 @@ public class AdapterService extends Service {
                 buffer[length] = (byte)(crc & 0xFF);
                 buffer[length + 1] = (byte)((crc >> 8) & 0xFF);
                 try {
-                    //debug("UART transmit", buffer, 0, buffer.length);
+                    //debug("RTU write", buffer, 0, buffer.length);
                     port.write(buffer, 500);
                 }
                 catch (SerialTimeoutException ignored) {
@@ -380,6 +404,7 @@ public class AdapterService extends Service {
 
         public synchronized void use(Socket socket) throws IOException {
             release();
+            //socket.setSoTimeout(60000);
             input = socket.getInputStream();
             output = socket.getOutputStream();
             notify();
@@ -402,31 +427,51 @@ public class AdapterService extends Service {
                     in = input;
                 }
 
-                while (!stop) {
-                    int n;
-                    try {
-                        n = in.read(buffer);
-                        //debug("TCP input", buffer, 0, n);
+                nextRead:
+                for (int n = 0, expected = 6; !stop; ) {
+                    while (n < expected) {
+                        int read;
+                        try {
+                            read = in.read(buffer, n, buffer.length - n);
+                        }
+                        catch (Exception e) {
+                            read = -1;
+                        }
+                        if (stop || read < 0)
+                            break nextRead;
+                        n += read;
                     }
-                    catch (Exception e) {
-                        n = -1;
+                    //debug("TCP read " + n + " of " + expected, buffer, 0, n);
+
+                    if (expected == 6) {
+                        expected += (((buffer[4] & 0xFF) << 8) | (buffer[5] & 0xFF));
+                        if (buffer[2] != 0 || buffer[3] != 0 ||
+                            expected < 8 || expected > buffer.length) {
+                            //debug("TCP invalid packet", buffer, 0, n);
+                            n = 0;
+                            expected = 6;
+                            continue;
+                        }
                     }
-                    if (n < 0)
-                        break;
-                    else if (
-                        n >= 8 && buffer[2] == 0 && buffer[3] == 0 &&
-                        (((buffer[4] & 0xFF) << 8) | (buffer[5] & 0xFF)) == n - 6
-                    ) {
+
+                    if (n >= expected) {
                         T1 = buffer[0];
                         T2 = buffer[1];
-                        uart.transmit(buffer, 6, n - 6);
+                        uart.transmit(buffer, 6, expected - 6);
+
+                        n -= expected;
+                        if (n > 0)
+                            System.arraycopy(buffer, expected, buffer, 0, n);
+                        expected = 6;
                     }
                 }
 
                 synchronized (this) {
-                    release();
-                    input = null;
-                    output = null;
+                    if (in == input) {
+                        release();
+                        input = null;
+                        output = null;
+                    }
                 }
             }
         }
@@ -443,7 +488,7 @@ public class AdapterService extends Service {
                 buffer[5] = (byte)(length & 0xFF);
                 System.arraycopy(data, offset, buffer, 6, length);
                 try {
-                    //debug("TCP output", buffer, 0, buffer.length);
+                    //debug("TCP write", buffer, 0, buffer.length);
                     out.write(buffer);
                 }
                 catch (Exception ignored) {
