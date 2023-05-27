@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 
+import androidx.core.content.ContextCompat;
 import androidx.preference.EditTextPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
@@ -18,16 +19,14 @@ public class SettingsFragment extends PreferenceFragmentCompat {
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         setPreferencesFromResource(R.xml.preferences, rootKey);
 
-        Objects.<EditTextPreference>requireNonNull(findPreference("tcp_port"))
-            .setOnBindEditTextListener(
-                editText -> editText.setInputType(InputType.TYPE_CLASS_NUMBER)
-            );
-
         Objects.<Preference>requireNonNull(findPreference("adapter_start"))
             .setOnPreferenceChangeListener((preference, start) -> {
                 Context context = requireContext();
                 if (start instanceof Boolean && (Boolean)start) {
-                    context.startForegroundService(new Intent(context, AdapterService.class));
+                    ContextCompat.startForegroundService(
+                        context,
+                        new Intent(context, AdapterService.class)
+                    );
                     return false;
                 }
                 else {
@@ -38,6 +37,11 @@ public class SettingsFragment extends PreferenceFragmentCompat {
                 }
             }
         );
+
+        Objects.<EditTextPreference>requireNonNull(findPreference("tcp_port"))
+            .setOnBindEditTextListener(
+                editText -> editText.setInputType(InputType.TYPE_CLASS_NUMBER)
+            );
 
         Preference version = Objects.requireNonNull(findPreference("about_version"));
         version.setSummary(

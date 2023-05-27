@@ -1,21 +1,25 @@
 <resources>
     <string name="app_name">Modbus Adapter</string>
     <string name="channel_name">Modbus adpter service</string>
-    <string name="notification_text">Modbus adpter service is running</string>
-
-    <string name="uart">UART</string>
-    <string name="uart_baud_rate">Baud rate</string>
-    <string name="uart_data_bits">Data bits</string>
-    <string name="uart_stop_bits">Stop bits</string>
-    <string name="uart_parity">Parity</string>
-
-    <string name="tcp">TCP</string>
-    <string name="tcp_port">Listen port</string>
+    <string name="notification_title">Modbus adpter service is running</string>
+    <string name="notification_text">Click for more options</string>
 
     <string name="adapter">Service</string>
     <string name="adapter_start">Start adapter</string>
     <string name="adapter_on_summary">Adapter service is started and running</string>
     <string name="adapter_off_summary">Click to start the adapter service</string>
+
+    <string name="uart">UART</string>
+    <string name="uart_baud_rate">Baud rate</string>
+    <string name="uart_data_bits">Data bits</string>
+    <string name="uart_parity">Parity</string>
+    <string name="uart_parity_none">None</string>
+    <string name="uart_parity_odd">Odd</string>
+    <string name="uart_parity_even">Even</string>
+    <string name="uart_stop_bits">Stop bits</string>
+
+    <string name="tcp">TCP</string>
+    <string name="tcp_port">Listen port</string>
 
     <string name="about">About</string>
     <string name="about_version">Version</string>

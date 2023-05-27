@@ -37,7 +37,8 @@
         </activity>
 
         <service
-            android:name=".AdapterService">
+            android:name=".AdapterService"
+            android:foregroundServiceType="connectedDevice">
         </service>
 
     </application>

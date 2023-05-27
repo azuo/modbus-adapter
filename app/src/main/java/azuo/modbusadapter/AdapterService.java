@@ -1,8 +1,6 @@
 package azuo.modbusadapter;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
@@ -10,8 +8,12 @@ import android.content.SharedPreferences;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.os.IBinder;
 
+import androidx.core.app.NotificationChannelCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.preference.PreferenceManager;
 
 import com.google.android.material.color.MaterialColors;
@@ -40,8 +42,8 @@ public class AdapterService extends Service {
 
     @Override
     public void onCreate() {
+        super.onCreate();
         getTheme().applyStyle(R.style.Theme_ModbusAdapter, true);
-        makeForeground();
     }
 
     @Override
@@ -55,7 +57,7 @@ public class AdapterService extends Service {
         if (SERVICE_STARTED)
             return START_STICKY;
 
-        UsbManager usb = Objects.requireNonNull(getSystemService(UsbManager.class));
+        UsbManager usb = Objects.requireNonNull((UsbManager)getSystemService(USB_SERVICE));
         List<UsbSerialDriver> drivers = UsbSerialProber.getDefaultProber().findAllDrivers(usb);
         if (drivers.isEmpty()) {
             stopSelf(getString(R.string.no_usb));
@@ -138,10 +140,14 @@ public class AdapterService extends Service {
     }
 
     @Override
-    public void onDestroy() {
-        if (SERVICE_STARTED)
-            SERVICE_STARTED = false;
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        if (!SERVICE_STARTED)
+            stopSelf();
+    }
 
+    @Override
+    public void onDestroy() {
         if (gateway != null) {
             gateway.close();
             gateway = null;
@@ -152,32 +158,32 @@ public class AdapterService extends Service {
             uart = null;
         }
 
+        SERVICE_STARTED = false;
         sendBroadcast(new Intent(ACTION_SERVICE_NOTIFY));
         super.onDestroy();
     }
 
     private void makeForeground() {
-        NotificationChannel channel = new NotificationChannel(
+        NotificationChannelCompat channel = new NotificationChannelCompat.Builder(
             "modbus_adatper",
-            getString(R.string.channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
-        );
-        //channel.setDescription();
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(channel);
+            NotificationManagerCompat.IMPORTANCE_DEFAULT
+        ).setName(getString(R.string.channel_name)).build();
+        NotificationManagerCompat.from(this).createNotificationChannel(channel);
 
-        Notification notification = new Notification.Builder(this, channel.getId())
-            //.setContentTitle(getText(R.string.app_name))
+        Notification notification = new NotificationCompat.Builder(this, channel.getId())
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentTitle(getText(R.string.notification_title))
             .setContentText(getText(R.string.notification_text))
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(MaterialColors.getColor(this, R.attr.colorPrimary, 0))
             .setOngoing(true)
+            .setShowWhen(false)
             .setContentIntent(
                 PendingIntent.getActivity(
                     this,
                     0,
                     new Intent(this, MainActivity.class),
-                    PendingIntent.FLAG_IMMUTABLE
+                    Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0
                 )
             ).build();
         startForeground(ONGOING_NOTIFICATION_ID, notification);

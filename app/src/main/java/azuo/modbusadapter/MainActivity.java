@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.snackbar.Snackbar;
 
@@ -63,7 +64,10 @@ public class MainActivity extends AppCompatActivity {
             }
             else if (AdapterService.ACTION_USB_PERMISSION.equals(intent.getAction())) {
                 if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false))
-                    startForegroundService(new Intent(context, AdapterService.class));
+                    ContextCompat.startForegroundService(
+                        context,
+                        new Intent(context, AdapterService.class)
+                    );
                 else
                     Snackbar.make(
                         findViewById(android.R.id.content),

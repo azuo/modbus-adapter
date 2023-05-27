@@ -12,9 +12,9 @@
     </string-array>
 
     <string-array name="parities">
-        <item>None</item>
-        <item>Odd</item>
-        <item>Event</item>
+        <item>@string/uart_parity_none</item>
+        <item>@string/uart_parity_odd</item>
+        <item>@string/uart_parity_even</item>
     </string-array>
 
     <string-array name="parity_values">
