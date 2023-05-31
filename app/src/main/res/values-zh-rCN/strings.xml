@@ -9,6 +9,11 @@
     <string name="adapter_start">启动适配器</string>
     <string name="adapter_on_summary">适配器服务已启动正在运行</string>
     <string name="adapter_off_summary">点击启动适配器服务</string>
+    <string name="adapter_debug">启用调试日志</string>
+    <string name="adapter_debug_on">调试日志写入到：\n%1$s</string>
+    <string name="adapter_debug_off">适配器服务的调试日志已禁用</string>
+    <string name="adapter_debug_error">启用调试日志失败</string>
+    <string name="adapter_debug_restart">重启应用以使设置生效？</string>
 
     <string name="uart">UART</string>
     <string name="uart_baud_rate">波特率</string>

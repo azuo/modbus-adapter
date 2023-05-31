@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import androidx.preference.EditTextPreference;
 import androidx.preference.Preference;
@@ -38,23 +39,46 @@ public class SettingsFragment extends PreferenceFragmentCompat {
             }
         );
 
+        TwoStatePreference debug = Objects.requireNonNull(findPreference("adapter_debug"));
+        if (!debug.isChecked())
+            debug.setSummary(R.string.adapter_debug_off);
+        else if (App.DEBUG_LOG != null)
+            debug.setSummary(getString(R.string.adapter_debug_on, App.DEBUG_LOG));
+        else
+            debug.setSummary(R.string.adapter_debug_error);
+        debug.setOnPreferenceChangeListener((preference, checked) -> {
+            final Context context = requireContext();
+            new AlertDialog.Builder(requireContext())
+                .setMessage(R.string.adapter_debug_restart)
+                .setPositiveButton(android.R.string.ok, ((dialog, which) -> {
+                    preference.getSharedPreferences().edit().putBoolean(
+                        preference.getKey(),
+                        checked instanceof Boolean && (Boolean)checked
+                    ).commit();
+                    context.startActivity(Intent.makeRestartActivityTask(
+                        context.getPackageManager()
+                               .getLaunchIntentForPackage(context.getPackageName())
+                               .getComponent()
+                    ));
+                    System.exit(0);
+                }))
+                .setNegativeButton(android.R.string.cancel, ((dialog, which) -> {
+                    dialog.dismiss();
+                }))
+                .show();
+            return false;
+        });
+
         Objects.<EditTextPreference>requireNonNull(findPreference("tcp_port"))
             .setOnBindEditTextListener(
                 editText -> editText.setInputType(InputType.TYPE_CLASS_NUMBER)
             );
 
-        Preference version = Objects.requireNonNull(findPreference("about_version"));
-        version.setSummary(
+        Objects.<Preference>requireNonNull(findPreference("about_version")).setSummary(
             getString(R.string.app_name) + " v" +
             BuildConfig.VERSION_NAME +
             (BuildConfig.DEBUG ? " dev" : "")
         );
-        version.setOnPreferenceClickListener(preference -> {
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setData(Uri.parse("https://github.com/azuo/modbus-adapter"));
-            startActivity(intent);
-            return true;
-        });
     }
 
     @Override

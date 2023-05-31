@@ -1,4 +1,5 @@
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory
         app:title="@string/adapter"
@@ -11,6 +12,11 @@
             app:summaryOff="@string/adapter_off_summary"
             app:iconSpaceReserved="false"
             app:persistent="false" />
+
+        <SwitchPreferenceCompat
+            app:key="adapter_debug"
+            app:title="@string/adapter_debug"
+            app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
 
@@ -79,7 +85,13 @@
             app:key="about_version"
             app:title="@string/about_version"
             app:iconSpaceReserved="false"
-            app:persistent="false" />
+            app:persistent="false">
+
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://github.com/azuo/modbus-adapter" />
+
+        </Preference>
 
     </PreferenceCategory>
 

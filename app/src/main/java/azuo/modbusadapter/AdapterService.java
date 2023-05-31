@@ -255,7 +255,7 @@ public class AdapterService extends Service {
                         expected = n;
 
                     if (buffer[1] == 0 || expected > buffer.length) {
-                        //debug("RTU invalid packet", buffer, 0, n);
+                        debug("RTU invalid packet", buffer, 0, n);
                         n = 0;
                         continue;
                     }
@@ -265,8 +265,8 @@ public class AdapterService extends Service {
                     if (CRC16(buffer, expected - 2) ==
                         ((buffer[expected - 2] & 0xFF) | ((buffer[expected - 1] & 0xFF) << 8)))
                         gateway.reply(buffer, 0, expected - 2);
-                    //else
-                    //    debug("RTU bad CRC", buffer, 0, expected);
+                    else
+                        debug("RTU bad CRC", buffer, 0, expected);
 
                     n -= expected;
                     if (n > 0)
@@ -453,7 +453,7 @@ public class AdapterService extends Service {
                         expected += (((buffer[4] & 0xFF) << 8) | (buffer[5] & 0xFF));
                         if (buffer[2] != 0 || buffer[3] != 0 ||
                             expected < 8 || expected > buffer.length) {
-                            //debug("TCP invalid packet", buffer, 0, n);
+                            debug("TCP invalid packet", buffer, 0, n);
                             n = 0;
                             expected = 6;
                             continue;
@@ -537,18 +537,25 @@ public class AdapterService extends Service {
         }
     }
 
+    private static boolean debugEnabled() {
+        return App.DEBUG_LOG != null;
+    }
+
     private static void debug(String message) {
-        android.util.Log.i("AdaterService", message);
+        if (debugEnabled())
+            android.util.Log.i("AdapterService", message);
     }
 
     private static void debug(String prefix, byte[] data, int offset, int length) {
-        StringBuilder sb = new StringBuilder(prefix).append(":\n");
-        for (int i = offset; i < offset + length; ++i) {
-            String s = Integer.toHexString(data[i] & 0xFF);
-            if (s.length() == 1)
-                sb.append('0');
-            sb.append(s).append(' ');
+        if (debugEnabled()) {
+            StringBuilder sb = new StringBuilder(prefix).append(":\n");
+            for (int i = offset; i < offset + length; ++i) {
+                String s = Integer.toHexString(data[i] & 0xFF);
+                if (s.length() == 1)
+                    sb.append('0');
+                sb.append(s).append(' ');
+            }
+            android.util.Log.i("AdapterService", sb.toString());
         }
-        android.util.Log.i("AdaterService", sb.toString());
     }
 }

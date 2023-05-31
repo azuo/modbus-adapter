@@ -8,6 +8,11 @@
     <string name="adapter_start">Start adapter</string>
     <string name="adapter_on_summary">Adapter service is started and running</string>
     <string name="adapter_off_summary">Click to start the adapter service</string>
+    <string name="adapter_debug">Enable debug log</string>
+    <string name="adapter_debug_on">Debug log is written to:\n%1$s</string>
+    <string name="adapter_debug_off">Debug log for adapter service is disabled</string>
+    <string name="adapter_debug_error">Failed to enable debug log</string>
+    <string name="adapter_debug_restart">Restart the app to apply the change?</string>
 
     <string name="uart">UART</string>
     <string name="uart_baud_rate">Baud rate</string>
