@@ -17,7 +17,6 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.preference.PreferenceManager;
 
 import com.google.android.material.color.MaterialColors;
-import com.hoho.android.usbserial.driver.SerialTimeoutException;
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
@@ -88,14 +87,19 @@ public class AdapterService extends Service {
 
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         UsbSerialPort port = driver.getPorts().get(0);
+        int baudRate, charBits;
         try {
             port.open(connection);
-            port.setParameters(
-                Integer.parseInt(preferences.getString("uart_baud_rate", "-1")),
-                Integer.parseInt(preferences.getString("uart_data_bits", "-1")),
-                Integer.parseInt(preferences.getString("uart_stop_bits", "-1")),
-                Integer.parseInt(preferences.getString("uart_parity", "-1"))
-            );
+            baudRate =
+                Integer.parseInt(preferences.getString("uart_baud_rate", "-1"));
+            int dataBits =
+                Integer.parseInt(preferences.getString("uart_data_bits", "-1"));
+            int stopBits =
+                Integer.parseInt(preferences.getString("uart_stop_bits", "-1"));
+            int parity =
+                Integer.parseInt(preferences.getString("uart_parity", "-1"));
+            port.setParameters(baudRate, dataBits, stopBits, parity);
+            charBits = dataBits + (stopBits > 2 ? 2 : stopBits) + (parity > 0 ? 1 : 0);
         }
         catch (Exception e) {
             if (port.isOpen()) {
@@ -128,7 +132,7 @@ public class AdapterService extends Service {
             return START_NOT_STICKY;
         }
 
-        uart = new UART(port);
+        uart = new UART(port, baudRate, charBits);
         uart.start();
 
         gateway = new Gateway(socket);
@@ -190,7 +194,7 @@ public class AdapterService extends Service {
     }
 
     private void stopSelf(String error) {
-        //debug(error);
+        debug(error);
         Intent notify = new Intent(ACTION_SERVICE_NOTIFY);
         notify.putExtra("error", error);
         sendBroadcast(notify);
@@ -201,15 +205,23 @@ public class AdapterService extends Service {
 
     private class UART extends Thread {
         private final UsbSerialPort port;
+        private final int baudRate;
+        private final int charBits;
         private boolean stop = false;
 
-        public UART(UsbSerialPort port) {
+        public UART(UsbSerialPort port, int baudRate, int charBits) {
             this.port = port;
+            this.baudRate = baudRate;
+            this.charBits = charBits;
         }
 
         @Override
         public void run() {
-            byte[] buffer = new byte[256];
+            if (debugEnabled())
+                debug(port.getDevice().toString());
+
+            final int packetSize = port.getReadEndpoint().getMaxPacketSize();
+            final byte[] buffer = new byte[256];
             nextRead:
             for (int n = 0, expected = 4; !stop; ) {
                 try {
@@ -222,10 +234,33 @@ public class AdapterService extends Service {
 
                     while (n < expected) {
                         // buggy bulkTransfer (used by port.read if timeout is not 0) fails if more
-                        // than 64 bytes data is read?
-                        byte[] more = new byte[Math.min(64, buffer.length - n)];
-                        int read = port.read(more, 500);
+                        // than packetSize bytes data is read?
+                        byte[] more = new byte[Math.min(packetSize, buffer.length - n)];
+
+                        // minimum number of characters to be read
+                        int size = Math.min(more.length, expected - n);
+
+                        // if baudRate > 19200
+                        //   inter-frame delay = 1.75ms
+                        //   inter-character delay = 0.75ms
+                        // else
+                        //   inter-frame delay = 3.5 * character time
+                        //   inter-character delay = 1.5 * character time
+                        int timeout = baudRate > 19200 ?
+                            size * charBits * 1000 / baudRate + 1 +
+                            size * 3 / 4 + 2		// ceil((size - 1) * 0.75 + 1.75)
+                            :
+                            (size * 5 / 2 + 2) *	// size + (size - 1) * 1.5 + 3.5
+                            charBits * 1000 / baudRate + 1;
+
+                        int read = port.read(more, timeout);
                         if (stop || read <= 0) {
+                            if (!stop && debugEnabled())
+                                debug(
+                                    "RTU read " + size + " more bytes timed out after " +
+                                        timeout + "ms",
+                                    buffer, 0, n
+                                );
                             n = 0;
                             continue nextRead;
                         }
@@ -285,9 +320,7 @@ public class AdapterService extends Service {
                 buffer[length + 1] = (byte)((crc >> 8) & 0xFF);
                 try {
                     //debug("RTU write", buffer, 0, buffer.length);
-                    port.write(buffer, 500);
-                }
-                catch (SerialTimeoutException ignored) {
+                    port.write(buffer, 0);
                 }
                 catch (Exception e) {
                     if (!stop)
@@ -405,7 +438,7 @@ public class AdapterService extends Service {
     private class TCP extends Thread {
         private InputStream input = null;
         private OutputStream output = null;
-        private byte T1, T2;
+        private byte T1, T2, UI, FC;
         private boolean stop = false;
 
         public synchronized void use(Socket socket) throws IOException {
@@ -463,6 +496,8 @@ public class AdapterService extends Service {
                     if (n >= expected) {
                         T1 = buffer[0];
                         T2 = buffer[1];
+                        UI = buffer[6];
+                        FC = buffer[7];
                         uart.transmit(buffer, 6, expected - 6);
 
                         n -= expected;
@@ -485,6 +520,13 @@ public class AdapterService extends Service {
         public void send(byte[] data, int offset, int length) {
             final OutputStream out = output;
             if (out != null && !stop && length >= 2 && length <= 254) {
+                if (data[offset] != UI || (data[offset + 1] & 0x7F) != FC) {
+                    if (debugEnabled())
+                        debug(String.format(
+                            "Mismatched reply to query %02x %02x", UI & 0xFF, FC & 0xFF
+                        ), data, offset, length);
+                    return;
+                }
                 byte[] buffer = new byte[length + 6];
                 buffer[0] = T1;
                 buffer[1] = T2;
