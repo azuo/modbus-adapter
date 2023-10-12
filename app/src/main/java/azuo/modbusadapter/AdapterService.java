@@ -278,6 +278,12 @@ public class AdapterService extends Service {
                 }
 
                 if (expected == 4) {
+                    if (buffer[0] == 0 || (buffer[0] & 0xFF) > 247 || buffer[1] == 0) {
+                        debug("RTU invalid packet", buffer, 0, n);
+                        n = 0;
+                        continue;
+                    }
+
                     if ((buffer[1] & 0x80) != 0)
                         expected = 5;
                     else if (buffer[1] == 0x01 || buffer[1] == 0x02 ||
@@ -289,7 +295,7 @@ public class AdapterService extends Service {
                     else
                         expected = n;
 
-                    if (buffer[1] == 0 || expected > buffer.length) {
+                    if (expected > buffer.length) {
                         debug("RTU invalid packet", buffer, 0, n);
                         n = 0;
                         continue;
@@ -559,6 +565,10 @@ public class AdapterService extends Service {
                 catch (Exception ignored) {
                 }
             }
+            T1 = (byte)0x55;
+            T2 = (byte)0xAA;
+            UI = (byte)0x55;
+            FC = (byte)0xAA;
         }
 
         public void close() {
