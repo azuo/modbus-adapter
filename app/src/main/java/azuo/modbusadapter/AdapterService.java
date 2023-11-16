@@ -26,8 +26,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public class AdapterService extends Service {
     private static final int ONGOING_NOTIFICATION_ID = AdapterService.class.hashCode();
@@ -286,12 +288,13 @@ public class AdapterService extends Service {
 
                     if ((buffer[1] & 0x80) != 0)
                         expected = 5;
-                    else if (buffer[1] == 0x01 || buffer[1] == 0x02 ||
-                             buffer[1] == 0x03 || buffer[1] == 0x04)
+                    else if (buffer[1] >= 0x01 && buffer[1] <= 0x04)
                         expected = 5 + (buffer[2] & 0xFF);
                     else if (buffer[1] == 0x05 || buffer[1] == 0x06 ||
                              buffer[1] == 0x0F || buffer[1] == 0x10)
                         expected = 8;
+                    else if (buffer[1] >= 0x41 && buffer[1] <= 0x44)
+                        expected = n <= 6 ? 9 : 9 + (buffer[6] & 0xFF);
                     else
                         expected = n;
 
@@ -415,11 +418,12 @@ public class AdapterService extends Service {
 
             tcp.close();
             tcp = null;
+            noExtensionUnits.clear();
         }
 
         public void reply(byte[] data, int offset, int length) {
-            if (!stop && tcp != null)
-                tcp.send(data, offset, length);
+            if (!stop && tcp != null && !tcp.send(data, offset, length))
+                debug("Unmatched reply", data, offset, length);
         }
 
         public void close() {
@@ -441,17 +445,22 @@ public class AdapterService extends Service {
         }
     }
 
+    // units those do not support 0x4X extended read function codes
+    private final Set<Byte> noExtensionUnits = new HashSet<>();
+
     private class TCP extends Thread {
         private InputStream input = null;
         private OutputStream output = null;
-        private byte T1, T2, UI, FC;
+        private final byte[] header = new byte[12];
         private boolean stop = false;
 
         public synchronized void use(Socket socket) throws IOException {
             release();
             //socket.setSoTimeout(60000);
-            input = socket.getInputStream();
-            output = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+            OutputStream out = socket.getOutputStream();
+            input = in;
+            output = out;
             notify();
         }
 
@@ -500,10 +509,13 @@ public class AdapterService extends Service {
                     }
 
                     if (n >= expected) {
-                        T1 = buffer[0];
-                        T2 = buffer[1];
-                        UI = buffer[6];
-                        FC = buffer[7];
+                        // save ADU header
+                        System.arraycopy(buffer, 0, header, 0, header.length);
+
+                        // use extended read function 0x4X to better match reply
+                        if (buffer[7] >= 0x01 && buffer[7] <= 0x04 &&
+                            !noExtensionUnits.contains(buffer[6]))
+                            buffer[7] |= 0x40;
                         uart.transmit(buffer, 6, expected - 6);
 
                         n -= expected;
@@ -514,40 +526,75 @@ public class AdapterService extends Service {
                 }
 
                 synchronized (this) {
-                    if (in == input) {
+                    if (in == input)
                         release();
-                        input = null;
-                        output = null;
-                    }
                 }
             }
         }
 
-        public void send(byte[] data, int offset, int length) {
+        public boolean send(byte[] data, int offset, int length) {
             final OutputStream out = output;
-            if (out != null && !stop && length >= 2 && length <= 254) {
-                if (data[offset] != UI || (data[offset + 1] & 0x7F) != FC) {
-                    if (debugEnabled())
-                        debug(String.format(
-                            "Mismatched reply to query %02x %02x", UI & 0xFF, FC & 0xFF
-                        ), data, offset, length);
-                    return;
-                }
-                byte[] buffer = new byte[length + 6];
-                buffer[0] = T1;
-                buffer[1] = T2;
-                buffer[2] = 0;
-                buffer[3] = 0;
-                buffer[4] = 0; //(byte)((length >> 8) & 0xFF);
-                buffer[5] = (byte)(length & 0xFF);
-                System.arraycopy(data, offset, buffer, 6, length);
-                try {
-                    //debug("TCP write", buffer, 0, buffer.length);
-                    out.write(buffer);
-                }
-                catch (Exception ignored) {
-                }
+            if (out == null || stop || length < 2 || length > 254)
+                return false;
+
+            byte UI = data[offset];       // unit identifier (device address)
+            if (UI != header[6])
+                return false;
+
+            byte RC = data[offset + 1];   // response code
+            byte FC = (byte)(RC & 0x7F);  // function code
+            boolean ext = FC >= 0x41 && FC <= 0x44;
+            if (noExtensionUnits.contains(UI) ?
+                ext || FC != header[7] :
+                ((FC >= 0x01 && FC <= 0x04) || FC != (ext ? (header[7] | 0x40) : header[7])))
+                return false;
+
+            if (ext && FC != header[7] && RC < 0 && length >= 3 && data[offset + 2] == 0x01) {
+                noExtensionUnits.add(UI);
+                debug("Unit " + UI + " does not support 0x4X functions.");
+                return true;
             }
+
+            if (RC > 0 && (
+                ((FC == 0x01 || FC == 0x02) &&
+                 (length < 3 ||
+                  data[offset + 2] != (byte)(((((header[10] & 0xFF) << 8) | (header[11] & 0xFF)) + 7) / 8))) ||
+                ((FC == 0x03 || FC == 0x04) &&
+                 (length < 3 ||
+                  data[offset + 2] != (byte)((((header[10] & 0xFF) << 8) | (header[11] & 0xFF)) * 2))) ||
+                ((FC == 0x05 || FC == 0x06 || FC == 0x0F || FC == 0x10 || ext) &&
+                 (length < 6 ||
+                  data[offset + 2] != header[8] || data[offset + 3] != header[9] ||
+                  data[offset + 4] != header[10] || data[offset + 5] != header[11]))
+            )) {
+                return false;
+            }
+
+            if (ext && FC != header[7]) {
+                // restore extended function code to normal one, exclude address and count
+                RC &= ~0x40;
+                offset += 4;
+                length -= 4;
+            }
+
+            byte[] buffer = new byte[length + 6];
+            buffer[0] = header[0];
+            buffer[1] = header[1];
+            buffer[2] = 0;
+            buffer[3] = 0;
+            buffer[4] = 0; //(byte)((length >> 8) & 0xFF);
+            buffer[5] = (byte)(length & 0xFF);
+            buffer[6] = UI;
+            buffer[7] = RC;
+            System.arraycopy(data, offset + 2, buffer, 8, length - 2);
+            try {
+                //debug("TCP write", buffer, 0, buffer.length);
+                out.write(buffer);
+                out.flush();
+            }
+            catch (Exception ignored) {
+            }
+            return true;
         }
 
         private void release() {
@@ -557,6 +604,7 @@ public class AdapterService extends Service {
                 }
                 catch (Exception ignored) {
                 }
+                input = null;
             }
             if (output != null) {
                 try {
@@ -564,19 +612,18 @@ public class AdapterService extends Service {
                 }
                 catch (Exception ignored) {
                 }
+                output = null;
             }
-            T1 = (byte)0x55;
-            T2 = (byte)0xAA;
-            UI = (byte)0x55;
-            FC = (byte)0xAA;
+            header[0] = (byte)0x55;     // transaction code high
+            header[1] = (byte)0xAA;     // transaction code low
+            header[6] = (byte)0x55;     // unit identifier (device address)
+            header[7] = (byte)0xAA;     // function code
         }
 
         public void close() {
             stop = true;
             synchronized (this) {
                 release();
-                input = null;
-                output = null;
                 notify();
             }
             if (isAlive()) {
