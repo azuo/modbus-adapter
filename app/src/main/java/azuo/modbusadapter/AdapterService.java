@@ -27,8 +27,11 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 
 public class AdapterService extends Service {
@@ -329,7 +332,9 @@ public class AdapterService extends Service {
                 buffer[length + 1] = (byte)((crc >> 8) & 0xFF);
                 try {
                     //debug("RTU write", buffer, 0, buffer.length);
-                    port.write(buffer, 0);
+                    synchronized (port) {
+                        port.write(buffer, 0);
+                    }
                 }
                 catch (Exception e) {
                     if (!stop)
@@ -378,8 +383,9 @@ public class AdapterService extends Service {
 
     private class Gateway extends Thread {
         private final ServerSocket socket;
-        private TCP tcp = null;
         private boolean stop = false;
+        private final Queue<TCP> workers = new LinkedList<>();
+        private static final int MAX_WORKERS = 5;
 
         public Gateway(ServerSocket socket) {
             this.socket = socket;
@@ -387,9 +393,6 @@ public class AdapterService extends Service {
 
         @Override
         public void run() {
-            tcp = new TCP();
-            tcp.start();
-
             while (!stop) {
                 Socket client = null;
                 try {
@@ -403,6 +406,28 @@ public class AdapterService extends Service {
                 }
                 if (client != null) {
                     //debug("Accepted connection.");
+                    TCP tcp = null;
+                    for (Iterator<TCP> it = workers.iterator(); it.hasNext(); ) {
+                        TCP worker = it.next();
+                        if (worker.isIdle()) {
+                            tcp = worker;
+                            it.remove();
+                            break;
+                        }
+                    }
+                    if (tcp == null) {
+                        if (workers.size() < MAX_WORKERS) {
+                            tcp = new TCP();
+                            tcp.start();
+                            debug("Created worker " + workers.size());
+                        }
+                        else {
+                            tcp = workers.remove();
+                            debug("Drop eldest connection.");
+                        }
+                    }
+                    workers.add(tcp);
+
                     try {
                         tcp.use(client);
                     }
@@ -416,14 +441,33 @@ public class AdapterService extends Service {
                 }
             }
 
-            tcp.close();
-            tcp = null;
+            for (TCP tcp : workers)
+                tcp.close(false);
+            for (TCP tcp : workers) {
+                if (tcp.isAlive()) {
+                    try {
+                        tcp.join();
+                    }
+                    catch (Exception ignored) {
+                    }
+                }
+            }
+            workers.clear();
             noExtensionUnits.clear();
         }
 
         public void reply(byte[] data, int offset, int length) {
-            if (!stop && tcp != null && !tcp.send(data, offset, length))
-                debug("Unmatched reply", data, offset, length);
+            if (!stop) {
+                boolean sent = false;
+                for (TCP tcp : workers) {
+                    if (tcp.send(data, offset, length)) {
+                        sent = true;
+                        break;
+                    }
+                }
+                if (!sent)
+                    debug("Unmatched reply", data, offset, length);
+            }
         }
 
         public void close() {
@@ -462,6 +506,10 @@ public class AdapterService extends Service {
             input = in;
             output = out;
             notify();
+        }
+
+        public synchronized boolean isIdle() {
+            return input == null && output == null;
         }
 
         @Override
@@ -620,13 +668,13 @@ public class AdapterService extends Service {
             header[7] = (byte)0xAA;     // function code
         }
 
-        public void close() {
+        public void close(boolean join) {
             stop = true;
             synchronized (this) {
                 release();
                 notify();
             }
-            if (isAlive()) {
+            if (join && isAlive()) {
                 try {
                     join();
                 }
