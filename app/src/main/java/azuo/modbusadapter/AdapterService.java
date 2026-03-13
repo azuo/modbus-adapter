@@ -26,13 +26,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
-import java.util.Set;
 
 public class AdapterService extends Service {
     private static final int ONGOING_NOTIFICATION_ID = AdapterService.class.hashCode();
@@ -453,7 +453,7 @@ public class AdapterService extends Service {
                 }
             }
             workers.clear();
-            noExtensionUnits.clear();
+            extendedReadSupports.clear();
         }
 
         public void reply(byte[] data, int offset, int length) {
@@ -489,8 +489,9 @@ public class AdapterService extends Service {
         }
     }
 
-    // units those do not support 0x4X extended read function codes
-    private final Set<Byte> noExtensionUnits = new HashSet<>();
+    // whether a unit supports 0x4X extended read function codes
+    private enum ExtendedReadSupport {Unknown, Checking, Unsupported, Supported};
+    private final Map<Byte, ExtendedReadSupport> extendedReadSupports = new HashMap<>();
 
     private class TCP extends Thread {
         private InputStream input = null;
@@ -561,9 +562,19 @@ public class AdapterService extends Service {
                         System.arraycopy(buffer, 0, header, 0, header.length);
 
                         // use extended read function 0x4X to better match reply
-                        if (buffer[7] >= 0x01 && buffer[7] <= 0x04 &&
-                            !noExtensionUnits.contains(buffer[6]))
-                            buffer[7] |= 0x40;
+                        if (buffer[7] >= 0x01 && buffer[7] <= 0x04) {
+                            ExtendedReadSupport support = extendedReadSupports.get(buffer[6]);
+                            if (support == ExtendedReadSupport.Unknown) {
+                                extendedReadSupports.put(buffer[6], ExtendedReadSupport.Checking);
+                                buffer[7] |= 0x40;
+                            }
+                            else if (support == ExtendedReadSupport.Checking) {
+                                extendedReadSupports.put(buffer[6], ExtendedReadSupport.Unsupported);
+                                debug("Unit " + buffer[6] + " does not respond to 0x4X functions.");
+                            }
+                            else if (support == ExtendedReadSupport.Supported)
+                                buffer[7] |= 0x40;
+                        }
                         uart.transmit(buffer, 6, expected - 6);
 
                         n -= expected;
@@ -592,15 +603,22 @@ public class AdapterService extends Service {
             byte RC = data[offset + 1];   // response code
             byte FC = (byte)(RC & 0x7F);  // function code
             boolean ext = FC >= 0x41 && FC <= 0x44;
-            if (noExtensionUnits.contains(UI) ?
+            ExtendedReadSupport support = extendedReadSupports.get(UI);
+            if (support != ExtendedReadSupport.Checking && support != ExtendedReadSupport.Supported ?
                 ext || FC != header[7] :
                 ((FC >= 0x01 && FC <= 0x04) || FC != (ext ? (header[7] | 0x40) : header[7])))
                 return false;
 
-            if (ext && FC != header[7] && RC < 0 && length >= 3 && data[offset + 2] == 0x01) {
-                noExtensionUnits.add(UI);
-                debug("Unit " + UI + " does not support 0x4X functions.");
-                return true;
+            if (support == null)
+                extendedReadSupports.put(UI, ExtendedReadSupport.Unknown);
+            else if (support == ExtendedReadSupport.Checking && ext && FC != header[7]) {
+                if (RC < 0 && length >= 3 && data[offset + 2] == 0x01) {
+                    extendedReadSupports.put(UI, ExtendedReadSupport.Unsupported);
+                    debug("Unit " + UI + " does not support 0x4X functions.");
+                    return true;
+                }
+                extendedReadSupports.put(UI, ExtendedReadSupport.Supported);
+                debug("Unit " + UI + " supports 0x4X functions.");
             }
 
             if (RC > 0 && (
