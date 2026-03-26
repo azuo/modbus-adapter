@@ -283,8 +283,13 @@ public class AdapterService extends Service {
                 }
 
                 if (expected == 4) {
-                    if (buffer[0] == 0 || (buffer[0] & 0xFF) > 247 || buffer[1] == 0) {
+                    if ((buffer[0] & 0xFF) > 247 || buffer[1] == 0) {
                         debug("RTU invalid packet", buffer, 0, n);
+                        n = 0;
+                        continue;
+                    }
+
+                    if (buffer[0] == 0 || !gateway.queried(buffer[0])) {
                         n = 0;
                         continue;
                     }
@@ -456,17 +461,23 @@ public class AdapterService extends Service {
             extendedReadSupports.clear();
         }
 
+        public boolean queried(byte unitIdentifier) {
+            if (!stop && unitIdentifier != 0) {
+                for (TCP tcp : workers) {
+                    if (tcp.unitIdentifier() == unitIdentifier)
+                        return true;
+                }
+            }
+            return false;
+        }
+
         public void reply(byte[] data, int offset, int length) {
             if (!stop) {
-                boolean sent = false;
                 for (TCP tcp : workers) {
-                    if (tcp.send(data, offset, length)) {
-                        sent = true;
-                        break;
-                    }
+                    if (tcp.send(data, offset, length))
+                        return;
                 }
-                if (!sent)
-                    debug("Unmatched reply", data, offset, length);
+                debug("Unmatched reply", data, offset, length);
             }
         }
 
@@ -511,6 +522,10 @@ public class AdapterService extends Service {
 
         public synchronized boolean isIdle() {
             return input == null && output == null;
+        }
+
+        public byte unitIdentifier() {
+            return header[6];
         }
 
         @Override
@@ -682,8 +697,8 @@ public class AdapterService extends Service {
             }
             header[0] = (byte)0x55;     // transaction code high
             header[1] = (byte)0xAA;     // transaction code low
-            header[6] = (byte)0x55;     // unit identifier (device address)
-            header[7] = (byte)0xAA;     // function code
+            header[6] = (byte)0;        // unit identifier (device address)
+            header[7] = (byte)0;        // function code
         }
 
         public void close(boolean join) {
